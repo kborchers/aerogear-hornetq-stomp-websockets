@@ -13,27 +13,20 @@ $(document).ready(function(){
         pushNetworkLogin: login,
         pushNetworkPassword: passcode,
         pushNetworkURL: url,
-        endpoints: [
-          {
-            address: "mail",
-            callback: function( message ) {
-              $("#messages").append("<p><strong>Mail Notification</strong> - " + message.body + "</p>");
-            }
-          },
-          {
-            address: "foo",
-            callback: function( message ) {
-              $("#messages").append("<p><strong>Foo Notification</strong> - " + message.body + "</p>");
-            }
-          }
-        ],
         onNetworkConnect: function( message ) {
           $('#connect').fadeOut({ duration: 'fast' });
           $('#messages')
-            .append("<p>Client will receive broadcast push messages on jms.topic.aerogear.broadcast.<br>Client will receive personal messages on jms.topic.aerogear." + message.headers.session + "<br></p>" )
+            .append("<p>Client will receive broadcast push messages on jms.topic.aerogear.broadcast<br>Client will receive personal messages on jms.topic.aerogear." + message.headers.session + "<br></p>" )
             .fadeIn();
         }
       }
+    }).connection.agPush;
+
+    client.register( "mail", function( message ) {
+      $("#messages").append("<p><strong>Mail Notification</strong> - " + message.body + "</p>");
+    });
+    client.register( "foo", function( message ) {
+      $("#messages").append("<p><strong>Foo Notification</strong> - " + message.body + "</p>");
     });
 
     return false;
