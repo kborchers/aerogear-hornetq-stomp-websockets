@@ -54,6 +54,7 @@ body {
   right: 0;
   top: 2em;
   z-index: -1;
+  display: none;
 }
 
 .message {
