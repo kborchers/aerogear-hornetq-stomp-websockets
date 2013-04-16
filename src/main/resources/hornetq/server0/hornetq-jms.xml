@@ -14,6 +14,10 @@
    <!--the topic used by the example-->
    <topic name="chat">
       <entry name="/topic/chat"/>
+   </topic>
+
+   <!-- AeroGear's  SimplePush topics -->
+   <topic name="aerogear.#">
       <entry name="/topic/aerogear/#"/>
    </topic>
 
