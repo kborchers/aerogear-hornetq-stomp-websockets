@@ -1,4 +1,4 @@
-/*! AeroGear JavaScript Library - v1.0.0 - 2013-04-15
+/*! AeroGear JavaScript Library - v1.0.0 - 2013-04-17
 * https://github.com/aerogear/aerogear-js
 * JBoss, Home of Professional Open Source
 * Copyright Red Hat, Inc., and individual contributors
@@ -480,272 +480,129 @@ AeroGear.isArray = function( obj ) {
 
 })( AeroGear, SockJS, Stomp );
 
-(function( AeroGear, undefined ) {
-    /**
-        DESCRIPTION
-        @class
-        @augments AeroGear.Core
-        @example
-     */
-    AeroGear.SimplePush = function( config ) {
-        // Allow instantiation without using new
-        if ( !( this instanceof AeroGear.SimplePush ) ) {
-            return new AeroGear.SimplePush( config );
-        }
-        // Super Constructor
-        AeroGear.Core.call( this );
+(function( AeroGear, $, undefined ) {
+    var stompNotifier;
+    // Use browser push implementation when available
+    // TODO: Test for browser-prefixed implementations
+    if ( navigator.push ) {
+        return;
+    }
 
-        this.lib = "SimplePush";
-        this.type = config ? config.type || "SimplePush" : "SimplePush";
-
-        /**
-            DESCRIPTION
-            @memberOf AeroGear.SimplePush
-            @type Object
-            @default connection
-         */
-        this.collectionName = "connection";
-
-        this.add( config );
+    AeroGear.SimplePush = {};
+    AeroGear.SimplePush.config = {
+        pushAppID: "",
+        appInstanceID: "",
+        pushNetworkLogin: "guest",
+        pushNetworkPassword: "guest",
+        channelPrefix: "jms.topic.aerogear.",
+        pushNetworkURL: "http://" + window.location.hostname + ":61614/agPushNetwork",
+        pushServerURL: "http://" + window.location.hostname + ":8080/registry/device"
     };
 
-    AeroGear.SimplePush.prototype = AeroGear.Core;
-    AeroGear.SimplePush.constructor = AeroGear.SimplePush;
+    AeroGear.SimplePush.endpoints = {};
 
-    /**
-        The adapters object is provided so that adapters can be added to the AeroGear.Notifier namespace dynamically and still be accessible to the add method
-        @augments AeroGear.Notifier
-     */
-    AeroGear.SimplePush.adapters = {};
-})( AeroGear );
+    AeroGear.SimplePush.registerWithChannel = function( name, endpoint ) {
+        // This is redundant but hopefully helpful in future proofing
+        endpoint.name = name;
 
-(function( AeroGear, undefined ) {
-    /**
-        DESCRIPTION
-        @constructs AeroGear.SimplePush.adapters.SimplePush
-        @param {String} connectionName - the name used to reference this SimplePush connection
-        @param {Object} settings={} - the settings to be passed to the adapter
-        @param {String} settings.pushNetworkLogin - push network username
-        @param {String} settings.pushNetworkPassword - push network password
-        @param {String} [settings.pushNetworkURL="<origin>/agPushNetwork"] - defines the base URL for connecting to the push messaging service
-        @param {String} [settings.pushServerURL="<origin>/agUnifiedPush"] - defines the URL for connecting to the AeroGear Unified Push server
-        @param {String} [settings.endpoints=[]] - the set of endpoints to filter push notifications by
-        @param {Function} [settings.onNetworkConnect] - a callback to execute when the Notifier is connected
-        @returns {Object} The created SimplePush connection
-     */
-    AeroGear.SimplePush.adapters.SimplePush = function( connectionName, settings ) {
-        // Allow instantiation without using new
-        if ( !( this instanceof AeroGear.SimplePush.adapters.SimplePush ) ) {
-            return new AeroGear.SimplePush.adapters.SimplePush( connectionName, settings );
-        }
+        AeroGear.SimplePush.endpoints[ name ] = endpoint;
+        // TODO: Inform push server?
+    };
 
-        settings = settings || {};
+    navigator.push = (function() {
+        function createChannels() {
+            // Temporarily set sessionID to true to avoid multiple inits
+            AeroGear.SimplePush.sessionID = true;
 
-        // Private Instance vars
-        var stompNotifier,
-            that = this,
-            type = "SimplePush",
-            name = connectionName,
-            endpoints = settings.endpoints || [],
-            pushNetworkURL = settings.pushNetworkURL || "http://" + window.location.hostname + ":61614/agPushNetwork",
-            pushServerURL = settings.pushServerURL || "http://" + window.location.hostname + ":8080/agUnifiedPush",
-            sessionID = null;
-
-        // Privileged methods
-        /**
-            Returns the value of the private settings var
-            @private
-            @augments AeroGear.SimplePush.adapters.SimplePush
-         */
-        this.getSettings = function() {
-            return settings;
-        };
-
-        /**
-            Returns the value of the private name var
-            @private
-            @augments AeroGear.SimplePush.adapters.SimplePush
-         */
-        this.getName = function() {
-            return name;
-        };
-
-        /**
-            Returns the value of the private pushNetworkURL var
-            @private
-            @augments AeroGear.SimplePush.adapters.SimplePush
-         */
-        this.getPushNetworkURL = function() {
-            return pushNetworkURL;
-        };
-
-        /**
-            Set the value of the private pushNetworkURL var
-            @private
-            @augments AeroGear.SimplePush.adapters.SimplePush
-            @param {String} url - New pushNetworkURL for this client
-         */
-        this.setPushNetworkURL = function( url ) {
-            pushNetworkURL = url;
-        };
-
-        /**
-            Returns the value of the private pushServerURL var
-            @private
-            @augments AeroGear.SimplePush.adapters.SimplePush
-         */
-        this.getPushServerURL = function() {
-            return pushServerURL;
-        };
-
-        /**
-            Set the value of the private pushServerURL var
-            @private
-            @augments AeroGear.SimplePush.adapters.SimplePush
-            @param {String} url - New pushServerURL for this client
-         */
-        this.setPushServerURL = function( url ) {
-            pushServerURL = url;
-        };
-
-        /**
-            Returns the value of the private endpoints var
-            @private
-            @augments AeroGear.SimplePush.adapters.SimplePush
-         */
-        this.getEndpoints = function() {
-            return endpoints;
-        };
-
-        /**
-            Adds an endpoint to the set
-            @param {Object} endpoint - The endpoint object to add to the set
-            @private
-            @augments AeroGear.SimplePush.adapters.SimplePush
-         */
-        this.addEndpoint = function( endpoint ) {
-            endpoints.push( endpoint );
-        };
-
-        /**
-            Check if subscribed to an endpoint
-            @param {String} address - The address of the endpoint object to search for in the set
-            @private
-            @augments AeroGear.SimplePush.adapters.SimplePush
-         */
-        this.getEndpointIndex = function( address ) {
-            for ( var i = 0; i < endpoints.length; i++ ) {
-                if ( endpoints[ i ].address === address ) {
-                    return i;
+            // Create a Notifier connection to the Push Network
+            stompNotifier = AeroGear.Notifier({
+                name: "agPushNetwork",
+                type: "stompws",
+                settings: {
+                    connectURL: AeroGear.SimplePush.config.pushNetworkURL
                 }
-            }
-            return -1;
-        };
+            }).clients.agPushNetwork;
 
-        /**
-            Removes an endpoint from the set
-            @param {String} address - The endpoint address for the endpoint object to remove from the set
-            @private
-            @augments AeroGear.SimplePush.adapters.SimplePush
-         */
-        this.removeEndpoint = function( address ) {
-            var index = this.getEndpointIndex( address );
-            if ( index >= 0 ) {
-                endpoints.splice( index, 1 );
-            }
-        };
+            stompNotifier.connect({
+                login: AeroGear.SimplePush.config.pushNetworkLogin,
+                password: AeroGear.SimplePush.config.pushNetworkPassword,
+                onConnect: function( stompFrame ) {
+                    AeroGear.SimplePush.sessionID = stompFrame.headers.session;
 
-        /**
-            Returns the value of the private sessionID var
-            @private
-            @augments AeroGear.SimplePush.adapters.SimplePush
-         */
-        this.getSessionID = function() {
-            return sessionID;
-        };
+                    // Register with Unified Push server
+                    $.ajax({
+                        contentType: "application/json",
+                        dataType: "json",
+                        type: "POST",
+                        url: AeroGear.SimplePush.config.pushServerURL,
+                        headers: {
+                            "ag-push-app": AeroGear.SimplePush.config.pushAppID,
+                            "AG-Mobile-APP": AeroGear.SimplePush.config.appInstanceID
+                        },
+                        data: {
+                            token: AeroGear.SimplePush.sessionID,
+                            os: "web"
+                        }
+                    });
 
-        /**
-            Sets the value of the private sessionID var
-            @param {String} newSession - The new sessionID to set
-            @private
-            @augments AeroGear.SimplePush.adapters.SimplePush
-         */
-        this.setSessionID = function( newSession ) {
-            sessionID = newSession;
-        };
+                    // Subscribe to personal and broadcast channels
+                    stompNotifier.subscribe([
+                        {
+                            address: AeroGear.SimplePush.config.channelPrefix + AeroGear.SimplePush.sessionID,
+                            callback: function( message ) {
+                                message.pushEndpoint = message.headers ? AeroGear.SimplePush.endpoints[ message.headers.endpoint ] : undefined;
 
-        // Instantiating SimplePush immediately creates a Notifier connection to the Push Network
-        stompNotifier = AeroGear.Notifier({
-            name: "agPushNetwork",
-            type: "stompws",
-            settings: {
-                connectURL: pushNetworkURL
-            }
-        }).clients.agPushNetwork;
+                                $( document ).trigger({
+                                    type: "push",
+                                    message: message
+                                });
+                            }
+                        },
+                        {
+                            address: AeroGear.SimplePush.config.channelPrefix + "broadcast",
+                            callback: function( message ) {
+                                message.pushEndpoint = AeroGear.SimplePush.endpoints.broadcast;
 
-        stompNotifier.connect({
-            login: settings.login,
-            password: settings.password,
-            onConnect: function( stompFrame ) {
-                var endpoints = that.getEndpoints(),
-                    settings = that.getSettings();
-                that.setSessionID( "jms.topic.aerogear." + stompFrame.headers.session );
-
-                stompNotifier.subscribe({
-                    address: that.getSessionID(),
-                    callback: function( message ) {
-                        var endpoint;
-                        if ( message.headers && message.headers.endpoint ) {
-                            endpoint = endpoints[ that.getEndpointIndex( message.headers.endpoint ) ];
-                            if ( endpoint ) {
-                                endpoint.callback( message );
+                                $( document ).trigger({
+                                    type: "push",
+                                    message: message
+                                });
                             }
                         }
-                    }
-                });
-
-                // TODO: Process initial provided endpoints to register with unified push server
-
-                // Call user supplied onNetworkConnect callback
-                if ( settings.onNetworkConnect ) {
-                    settings.onNetworkConnect.call( that, stompFrame );
+                    ]);
                 }
+            });
+        }
+
+        return {
+            register: function() {
+                if ( !AeroGear.SimplePush.sessionID ) {
+                    createChannels();
+                }
+
+                return {};
+            },
+
+            unregister: function( endpoint ) {
+                delete AeroGear.SimplePush.endpoints[ endpoint.name ];
+                // TODO: Inform push server?
             }
-        });
+        };
+    })();
+
+    navigator.setMessageHandler = function( messageType, callback ) {
+        var handler;
+        // TODO: Check for other browser implementations
+        if ( navigator.mozSetMessageHandler ) {
+            navigator.mozSetMessageHandler.apply( arguments );
+            return;
+        }
+
+        handler = function( event ) {
+            var message = event.message;
+            callback.call( this, message );
+        };
+
+        $( document ).on( messageType, handler );
     };
-
-    //Public Methods
-    /**
-        Register a push message endpoint
-        @param {String} address - endpoint identifier
-        @param {Function} callback - callback to be executed when a message is received on this endpoint
-        @example
-
-     */
-    AeroGear.SimplePush.adapters.SimplePush.prototype.register = function( address, callback ) {
-        this.addEndpoint({
-            address: address,
-            callback: callback
-        });
-
-        /**************************************
-        * TODO: Register with Unified Push Server
-        **************************************/
-    };
-
-    //Public Methods
-    /**
-        Unregister a push message endpoint
-        @param {String} address - endpoint identifier
-        @example
-
-     */
-    AeroGear.SimplePush.adapters.SimplePush.prototype.unregister = function( address ) {
-        this.removeEndpoint( address );
-
-        /**************************************
-        * TODO: Unregister with Unified Push Server
-        **************************************/
-    };
-
-})( AeroGear );
+})( AeroGear, jQuery );
