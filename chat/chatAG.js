@@ -1,6 +1,6 @@
 $(document).ready(function(){
 
-  var mailEndpoint, fooEndpoint, broadcastEndpoint;
+  var mailEndpoint, mailRequest, fooEndpoint, fooRequest, broadcastEndpoint;
 
   $('#connect_form').submit(function() {
     var url = $("#connect_url").val();
@@ -13,35 +13,37 @@ $(document).ready(function(){
     AeroGear.SimplePush.config.pushNetworkPassword = passcode;
     AeroGear.SimplePush.config.pushNetworkURL = url;
 
-    mailEndpoint = navigator.push.register();
-    // Normally this would be put into an onsuccess callback but it is immediately available in our implementation
-    AeroGear.SimplePush.registerWithChannel( "mail", mailEndpoint );
+    // This is an AeroGear addition to the spec since we need to setup the channels
+    navigator.push.connect( function() {
+      mailRequest = navigator.push.register();
+      mailRequest.onsuccess = function( event ) {
+        mailEndpoint = event.target.result;
+        mailRequest.registerWithPushServer( "mail", mailEndpoint );
+      };
 
-    fooEndpoint = navigator.push.register();
-    // Normally this would be put into an onsuccess callback but it is immediately available in our implementation
-    AeroGear.SimplePush.registerWithChannel( "foo", fooEndpoint );
+      fooRequest = navigator.push.register();
+      fooRequest.onsuccess = function( event ) {
+        fooEndpoint = event.target.result;
+        fooRequest.registerWithPushServer( "mail", fooEndpoint );
+      };
 
-    // If the app wants broadcast messages as well, user will need to register those
-    broadcastEndpoint = navigator.push.register();
-    // Normally this would be put into an onsuccess callback but it is immediately available in our implementation
-    AeroGear.SimplePush.registerWithChannel( "broadcast", broadcastEndpoint );
+      navigator.setMessageHandler( "push", function( message ) {
+        console.log(message);
+        if ( message.headers.destination === mailEndpoint.address )
+          $("#messages").append("<p><strong>Mail Notification</strong> - " + message.body + "</p>");
+        else if ( message.headers.destination === fooEndpoint.address )
+          $("#messages").append("<p><strong>Foo Notification</strong> - " + message.body + "</p>");
+        // Broadcast messages are subscribed by default and can be acted on as well
+        else if ( message.headers.destination === broadcastEndpoint.address )
+          $("#messages").append("<p><strong>Broadcast Notification</strong> - " + message.body + "</p>");
+      });
 
-    navigator.setMessageHandler( "push", function( message ) {
-      if ( message.pushEndpoint.name === mailEndpoint.name )
-        $("#messages").append("<p><strong>Mail Notification</strong> - " + message.body + "</p>");
-      else if ( message.pushEndpoint.name === fooEndpoint.name )
-        $("#messages").append("<p><strong>Foo Notification</strong> - " + message.body + "</p>");
-      else if ( message.pushEndpoint.name === broadcastEndpoint.name )
-        $("#messages").append("<p><strong>Broadcast Notification</strong> - " + message.body + "</p>");
-    });
-
-    // Just for display/testing and not necessary for functionality
-    $("#connect").fadeOut({ duration: "fast" });
-    setTimeout( function() {
+      // Just for display/testing and not necessary for functionality
+      $("#connect").fadeOut({ duration: "fast" });
       $("#messages")
-        .append("<p>Client will receive broadcast push messages on jms.topic.aerogear.broadcast<br>Client will receive personal messages on jms.topic.aerogear." + AeroGear.SimplePush.sessionID + "<br></p>" )
+        .append("<p>Client id is " + AeroGear.SimplePush.sessionID + "<br></p>" )
         .fadeIn();
-    }, 1000 );
+    });
 
     return false;
   });
